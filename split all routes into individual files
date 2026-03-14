@@ -1,0 +1,155 @@
+
+
+notes.js
+cat > /home/claude/pharmaone/backend/routes/notes.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { getNotes, getNoteById, createNote, downloadNote, likeNote, approveNote } = require('../controllers/noteController');
+c# onst { protect, authorize, optionalAuth } = require('../middleware/authMiddleware');
+const { uploadPDF } = require('../config/cloudinary');
+
+router.get('/', getNotes);
+router.get('/:id', getNoteById);
+router.post('/', protect, uploadPDF.single('file'), createNote);
+router.get('/:id/download', protect, downloadNote);
+router.post('/:id/like', protect, likeNote);
+router.put('/:id/approve', protect, authorize('admin'), approveNote);
+module.exports = router;
+EOF
+
+# lectures.js
+cat > /home/claude/pharmaone/backend/routes/lectures.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { getLectures, getLectureById, createLecture, likeLecture } = require('../controllers/lectureController');
+const { protect, authorize } = require('../middleware/authMiddleware');
+
+router.get('/', getLectures);
+router.get('/:id', getLectureById);
+router.post('/', protect, authorize('admin'), createLecture);
+router.post('/:id/like', protect, likeLecture);
+module.exports = router;
+EOF
+
+# research.js
+cat > /home/claude/pharmaone/backend/routes/research.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { analyzePaper, searchResearch, summarizePubmedPaper, getMyResearch } = require('../controllers/aiController');
+const { protect, optionalAuth } = require('../middleware/authMiddleware');
+const { uploadToMemory } = require('../config/cloudinary');
+
+router.post('/analyze', protect, uploadToMemory.single('pdf'), analyzePaper);
+router.get('/search', searchResearch);
+router.post('/summarize-pubmed', optionalAuth, summarizePubmedPaper);
+router.get('/my', protect, getMyResearch);
+module.exports = router;
+EOF
+
+# doctors.js
+cat > /home/claude/pharmaone/backend/routes/doctors.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { getDoctors, getDoctorById } = require('../controllers/doctorController');
+
+router.get('/', getDoctors);
+router.get('/:id', getDoctorById);
+module.exports = router;
+EOF
+
+# appointments.js
+cat > /home/claude/pharmaone/backend/routes/appointments.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { bookAppointment, getMyAppointments, getAppointmentById, updateAppointmentStatus, rateAppointment } = require('../controllers/doctorController');
+const { protect, authorize } = require('../middleware/authMiddleware');
+
+router.post('/', protect, bookAppointment);
+router.get('/my', protect, getMyAppointments);
+router.get('/:id', protect, getAppointmentById);
+router.put('/:id/status', protect, authorize('doctor', 'admin'), updateAppointmentStatus);
+router.post('/:id/rate', protect, rateAppointment);
+module.exports = router;
+EOF
+
+# jobs.js
+cat > /home/claude/pharmaone/backend/routes/jobs.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { getJobs, getJobById, createJob, applyForJob, getMyApplications, updateApplicationStatus, saveJob } = require('../controllers/jobController');
+const { protect, authorize } = require('../middleware/authMiddleware');
+const { uploadPDF } = require('../config/cloudinary');
+
+router.get('/', getJobs);
+router.get('/applications/my', protect, getMyApplications);
+router.get('/:id', getJobById);
+router.post('/', protect, authorize('admin'), createJob);
+router.post('/:id/apply', protect, uploadPDF.single('resume'), applyForJob);
+router.put('/:id/application-status', protect, authorize('admin'), updateApplicationStatus);
+router.post('/:id/save', protect, saveJob);
+module.exports = router;
+EOF
+
+# ai.js
+cat > /home/claude/pharmaone/backend/routes/ai.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const { aiChat } = require('../controllers/aiController');
+const { optionalAuth } = require('../middleware/authMiddleware');
+
+router.post('/chat', optionalAuth, aiChat);
+module.exports = router;
+EOF
+
+# users.js
+cat > /home/claude/pharmaone/backend/routes/users.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const asyncHandler = require('express-async-handler');
+const User = require('../models/User');
+const { protect, authorize } = require('../middleware/authMiddleware');
+
+router.get('/', protect, authorize('admin'), asyncHandler(async (req, res) => {
+  const users = await User.find().select('-password').sort({ createdAt: -1 });
+  res.json({ success: true, users });
+}));
+
+router.put('/:id/toggle-active', protect, authorize('admin'), asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) { res.status(404); throw new Error('User not found'); }
+  user.isActive = !user.isActive;
+  await user.save();
+  res.json({ success: true, isActive: user.isActive });
+}));
+
+router.put('/:id/verify-doctor', protect, authorize('admin'), asyncHandler(async (req, res) => {
+  const user = await User.findByIdAndUpdate(req.params.id, { isVerified: true }, { new: true });
+  res.json({ success: true, user });
+}));
+
+module.exports = router;
+EOF
+
+# payments.js
+cat > /home/claude/pharmaone/backend/routes/payments.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const asyncHandler = require('express-async-handler');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Order = require('../models/Order');
+const { Appointment } = require('../models/index');
+const { protect } = require('../middleware/authMiddleware');
+
+router.post('/confirm', protect, asyncHandler(async (req, res) => {
+  const { paymentIntentId, type, id } = req.body;
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  if (intent.status !== 'succeeded') { res.status(400); throw new Error('Payment not successful'); }
+  if (type === 'order') await Order.findByIdAndUpdate(id, { paymentStatus: 'Paid', orderStatus: 'Confirmed' });
+  else if (type === 'appointment') await Appointment.findByIdAndUpdate(id, { paymentStatus: 'Paid', status: 'Confirmed' });
+  res.json({ success: true, message: 'Payment confirmed' });
+}));
+
+module.exports = router;
+EOF
+
+echo "All route files created"

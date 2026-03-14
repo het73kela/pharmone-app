@@ -1,0 +1,70 @@
+const setupSocketHandlers = (io) => {
+  const onlineUsers = new Map(); // userId -> socketId
+
+  io.on('connection', (socket) => {
+    console.log(`Socket connected: ${socket.id}`);
+
+    // User comes online
+    socket.on('user:online', (userId) => {
+      onlineUsers.set(userId, socket.id);
+      socket.join(`user:${userId}`);
+      io.emit('users:online', Array.from(onlineUsers.keys()));
+    });
+
+    // ─── Video Consultation Room ──────────────────────────────────────────────
+    socket.on('room:join', ({ roomId, userId, role }) => {
+      socket.join(roomId);
+      socket.to(roomId).emit('room:user-joined', { userId, role });
+      console.log(`User ${userId} joined room ${roomId}`);
+    });
+
+    socket.on('room:leave', ({ roomId, userId }) => {
+      socket.leave(roomId);
+      socket.to(roomId).emit('room:user-left', { userId });
+    });
+
+    // WebRTC signaling
+    socket.on('webrtc:offer', ({ roomId, offer, from }) => {
+      socket.to(roomId).emit('webrtc:offer', { offer, from });
+    });
+
+    socket.on('webrtc:answer', ({ roomId, answer, from }) => {
+      socket.to(roomId).emit('webrtc:answer', { answer, from });
+    });
+
+    socket.on('webrtc:ice-candidate', ({ roomId, candidate }) => {
+      socket.to(roomId).emit('webrtc:ice-candidate', { candidate });
+    });
+
+    // ─── In-consultation Chat ─────────────────────────────────────────────────
+    socket.on('chat:message', ({ roomId, message, sender, timestamp }) => {
+      io.to(roomId).emit('chat:message', { message, sender, timestamp });
+    });
+
+    // ─── Appointment Notifications ────────────────────────────────────────────
+    socket.on('appointment:notify', ({ userId, data }) => {
+      const targetSocket = onlineUsers.get(userId);
+      if (targetSocket) {
+        io.to(targetSocket).emit('appointment:notification', data);
+      }
+    });
+
+    // ─── Order Tracking Updates ───────────────────────────────────────────────
+    socket.on('order:update', ({ userId, orderData }) => {
+      io.to(`user:${userId}`).emit('order:status-update', orderData);
+    });
+
+    socket.on('disconnect', () => {
+      for (const [userId, socketId] of onlineUsers.entries()) {
+        if (socketId === socket.id) {
+          onlineUsers.delete(userId);
+          io.emit('users:online', Array.from(onlineUsers.keys()));
+          break;
+        }
+      }
+      console.log(`Socket disconnected: ${socket.id}`);
+    });
+  });
+};
+
+module.exports = { setupSocketHandlers };

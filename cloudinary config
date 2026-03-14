@@ -1,0 +1,59 @@
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const multer = require('multer');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Storage for general images (medicines, profiles, notes covers)
+const imageStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'pharmaone/images',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 800, crop: 'limit', quality: 'auto' }],
+  },
+});
+
+// Storage for PDF documents (notes, research papers)
+const pdfStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'pharmaone/documents',
+    allowed_formats: ['pdf'],
+    resource_type: 'raw',
+  },
+});
+
+const uploadImage = multer({
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
+
+const uploadPDF = multer({
+  storage: pdfStorage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'), false);
+    }
+  },
+});
+
+// In-memory storage for AI analysis (don't save to cloud)
+const memoryStorage = multer.memoryStorage();
+const uploadToMemory = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files are allowed'), false);
+  },
+});
+
+module.exports = { cloudinary, uploadImage, uploadPDF, uploadToMemory };

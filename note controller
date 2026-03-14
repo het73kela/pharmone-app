@@ -1,0 +1,62 @@
+const asyncHandler = require('express-async-handler');
+const Note = require('../models/Note');
+const User = require('../models/User');
+
+const getNotes = asyncHandler(async (req, res) => {
+  const { search, subject, year, type, page = 1, limit = 15 } = req.query;
+  const query = { isApproved: true };
+
+  if (search) query.$text = { $search: search };
+  if (subject) query.subject = subject;
+  if (year) query.year = year;
+  if (type) query.type = type;
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [notes, total] = await Promise.all([
+    Note.find(query).sort({ isFeatured: -1, downloads: -1 }).skip(skip).limit(Number(limit)).populate('uploadedBy', 'name avatar'),
+    Note.countDocuments(query),
+  ]);
+
+  res.json({ success: true, notes, total, pages: Math.ceil(total / Number(limit)) });
+});
+
+const getNoteById = asyncHandler(async (req, res) => {
+  const note = await Note.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true }).populate('uploadedBy', 'name avatar');
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+  res.json({ success: true, note });
+});
+
+const createNote = asyncHandler(async (req, res) => {
+  if (!req.file) { res.status(400); throw new Error('Please upload a PDF file'); }
+  const note = await Note.create({
+    ...req.body,
+    fileUrl: req.file.path,
+    uploadedBy: req.user._id,
+    isApproved: req.user.role === 'admin',
+  });
+  res.status(201).json({ success: true, note });
+});
+
+const downloadNote = asyncHandler(async (req, res) => {
+  const note = await Note.findByIdAndUpdate(req.params.id, { $inc: { downloads: 1 } }, { new: true });
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+  res.json({ success: true, fileUrl: note.fileUrl });
+});
+
+const likeNote = asyncHandler(async (req, res) => {
+  const note = await Note.findById(req.params.id);
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+  const liked = note.likes.includes(req.user._id);
+  if (liked) note.likes.pull(req.user._id);
+  else note.likes.push(req.user._id);
+  await note.save();
+  res.json({ success: true, liked: !liked, likesCount: note.likes.length });
+});
+
+const approveNote = asyncHandler(async (req, res) => {
+  const note = await Note.findByIdAndUpdate(req.params.id, { isApproved: true }, { new: true });
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+  res.json({ success: true, note });
+});
+
+module.exports = { getNotes, getNoteById, createNote, downloadNote, likeNote, approveNote };

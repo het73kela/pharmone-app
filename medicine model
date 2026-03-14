@@ -1,0 +1,51 @@
+const mongoose = require('mongoose');
+
+const medicineSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    genericName: { type: String, trim: true },
+    brand: { type: String, trim: true },
+    category: {
+      type: String,
+      enum: ['OTC', 'Prescription', 'Ayurvedic', 'Homeopathic', 'Surgical', 'Vitamins', 'Cosmetics', 'Other'],
+      required: true,
+    },
+    description: { type: String },
+    uses: [String],
+    sideEffects: [String],
+    dosage: String,
+    manufacturer: String,
+    price: { type: Number, required: true, min: 0 },
+    mrp: { type: Number },
+    discount: { type: Number, default: 0 },
+    finalPrice: { type: Number },
+    stock: { type: Number, default: 0 },
+    unit: { type: String, default: 'strip' }, // strip, bottle, tube
+    requiresPrescription: { type: Boolean, default: false },
+    images: [String],
+    tags: [String],
+    rating: { type: Number, default: 0 },
+    reviews: [
+      {
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rating: Number,
+        comment: String,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    isActive: { type: Boolean, default: true },
+    expiryDate: Date,
+  },
+  { timestamps: true }
+);
+
+// Auto-calculate final price
+medicineSchema.pre('save', function (next) {
+  this.finalPrice = this.price - (this.price * this.discount) / 100;
+  next();
+});
+
+// Index for search
+medicineSchema.index({ name: 'text', genericName: 'text', brand: 'text', tags: 'text' });
+
+module.exports = mongoose.model('Medicine', medicineSchema);

@@ -1,0 +1,89 @@
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const bcrypt = require('bcryptjs');
+dotenv.config();
+
+const User = require('../models/User');
+const Medicine = require('../models/Medicine');
+const Note = require('../models/Note');
+const { Lecture, Job } = require('../models/index');
+
+const seed = async () => {
+  await mongoose.connect(process.env.MONGO_URI);
+  console.log('Connected to MongoDB');
+
+  // Clear existing data
+  await Promise.all([User.deleteMany(), Medicine.deleteMany(), Note.deleteMany(), Lecture.deleteMany(), Job.deleteMany()]);
+  console.log('Cleared existing data');
+
+  // Create admin
+  const admin = await User.create({
+    name: 'Admin User',
+    email: 'admin@pharmaone.com',
+    password: 'admin123',
+    role: 'admin',
+    isVerified: true,
+  });
+
+  // Create sample doctor
+  const doctor = await User.create({
+    name: 'Dr. Priya Sharma',
+    email: 'doctor@pharmaone.com',
+    password: 'doctor123',
+    role: 'doctor',
+    specialization: 'Clinical Pharmacist',
+    qualification: 'Pharm.D, BCPS',
+    experience: 8,
+    consultationFee: 500,
+    rating: 4.8,
+    isVerified: true,
+    availability: [
+      { day: 'Mon', slots: [{ start: '09:00', end: '09:30' }, { start: '10:00', end: '10:30' }, { start: '11:00', end: '11:30' }] },
+      { day: 'Wed', slots: [{ start: '14:00', end: '14:30' }, { start: '15:00', end: '15:30' }] },
+      { day: 'Fri', slots: [{ start: '09:00', end: '09:30' }, { start: '10:00', end: '10:30' }] },
+    ],
+  });
+
+  // Create sample patient
+  await User.create({ name: 'Rahul Patel', email: 'patient@pharmaone.com', password: 'patient123', role: 'patient' });
+
+  // Sample medicines
+  const medicines = await Medicine.insertMany([
+    { name: 'Paracetamol 500mg', genericName: 'Acetaminophen', brand: 'Crocin', category: 'OTC', description: 'Pain reliever and fever reducer', uses: ['Fever', 'Headache', 'Body pain'], price: 30, mrp: 35, discount: 14, stock: 500, unit: 'strip', requiresPrescription: false, rating: 4.5 },
+    { name: 'Amoxicillin 500mg', genericName: 'Amoxicillin', brand: 'Mox', category: 'Prescription', description: 'Broad-spectrum antibiotic', uses: ['Bacterial infections', 'Respiratory infections'], price: 85, mrp: 95, discount: 10, stock: 200, unit: 'strip', requiresPrescription: true, rating: 4.3 },
+    { name: 'Omeprazole 20mg', genericName: 'Omeprazole', brand: 'Omez', category: 'Prescription', description: 'Proton pump inhibitor for acidity', uses: ['GERD', 'Peptic ulcer', 'Acidity'], price: 55, mrp: 65, discount: 15, stock: 300, unit: 'strip', requiresPrescription: false, rating: 4.6 },
+    { name: 'Vitamin D3 1000IU', genericName: 'Cholecalciferol', brand: 'D-Rise', category: 'Vitamins', description: 'Vitamin D supplement', uses: ['Vitamin D deficiency', 'Bone health'], price: 120, mrp: 140, discount: 14, stock: 150, unit: 'bottle', requiresPrescription: false, rating: 4.7 },
+    { name: 'Cetirizine 10mg', genericName: 'Cetirizine', brand: 'Zyrtec', category: 'OTC', description: 'Antihistamine for allergies', uses: ['Allergic rhinitis', 'Urticaria', 'Allergies'], price: 25, mrp: 30, discount: 16, stock: 400, unit: 'strip', requiresPrescription: false, rating: 4.4 },
+    { name: 'Metformin 500mg', genericName: 'Metformin HCl', brand: 'Glycomet', category: 'Prescription', description: 'Oral antidiabetic medication', uses: ['Type 2 Diabetes'], price: 40, mrp: 50, discount: 20, stock: 250, unit: 'strip', requiresPrescription: true, rating: 4.5 },
+  ]);
+
+  // Sample notes
+  await Note.insertMany([
+    { title: 'Pharmacology Complete Notes - Unit 1', subject: 'Pharmacology', year: '2nd Year', type: 'Notes', fileUrl: 'https://example.com/pharm-notes.pdf', uploadedBy: admin._id, isApproved: true, isFeatured: true, tags: ['pharmacokinetics', 'pharmacodynamics'], downloads: 234 },
+    { title: 'Medicinal Chemistry - Organic Reactions', subject: 'Pharmaceutical Chemistry', year: '1st Year', type: 'Slides', fileUrl: 'https://example.com/medchem.pdf', uploadedBy: admin._id, isApproved: true, tags: ['organic chemistry', 'reactions'], downloads: 189 },
+    { title: 'Hospital Pharmacy Management - Complete Guide', subject: 'Hospital Pharmacy', year: '4th Year', type: 'Textbook', fileUrl: 'https://example.com/hospital.pdf', uploadedBy: admin._id, isApproved: true, isFeatured: true, tags: ['hospital', 'management', 'dispensing'], downloads: 312 },
+  ]);
+
+  // Sample lectures
+  await Lecture.insertMany([
+    { title: 'Introduction to Pharmacokinetics', subject: 'Pharmacology', year: '2nd Year', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ', instructor: 'Dr. Sharma', duration: '45 min', tags: ['ADME', 'pharmacokinetics'], views: 1200, isApproved: true, isFeatured: true },
+    { title: 'Drug-Drug Interactions Explained', subject: 'Clinical Pharmacy', year: '3rd Year', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ', instructor: 'Dr. Mehta', duration: '38 min', tags: ['interactions', 'clinical'], views: 890, isApproved: true },
+    { title: 'Antibiotics Classification and Mechanism', subject: 'Pharmacology', year: '2nd Year', videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ', instructor: 'Dr. Patel', duration: '52 min', tags: ['antibiotics', 'mechanism'], views: 1560, isApproved: true, isFeatured: true },
+  ]);
+
+  // Sample jobs
+  await Job.insertMany([
+    { title: 'Clinical Pharmacist', company: 'Apollo Hospitals', location: 'Mumbai, India', locationType: 'On-site', type: 'Full-time', category: 'Hospital Pharmacy', description: 'We are looking for a dedicated clinical pharmacist to join our team at Apollo Hospitals Mumbai.', requirements: ['B.Pharm or M.Pharm', '2+ years experience', 'Drug utilization review experience'], salaryMin: 40000, salaryMax: 70000, salaryCurrency: 'INR', postedBy: admin._id, isFeatured: true },
+    { title: 'Pharmacy Intern', company: 'Sun Pharma', location: 'Ahmedabad, India', locationType: 'On-site', type: 'Internship', category: 'Manufacturing', description: 'Summer internship for pharmacy students in our manufacturing division.', requirements: ['Pursuing B.Pharm or M.Pharm', '3rd or 4th year student'], salaryMin: 10000, salaryMax: 15000, salaryCurrency: 'INR', postedBy: admin._id },
+    { title: 'Drug Safety Associate', company: 'IQVIA', location: 'Bangalore, India', locationType: 'Hybrid', type: 'Full-time', category: 'Clinical Research', description: 'Join our pharmacovigilance team and contribute to global drug safety monitoring.', requirements: ['M.Pharm or Pharm.D', 'Knowledge of ICH guidelines', 'Strong analytical skills'], salaryMin: 45000, salaryMax: 75000, salaryCurrency: 'INR', postedBy: admin._id, isFeatured: true },
+    { title: 'Regulatory Affairs Specialist', company: 'Cipla', location: 'Mumbai, India', locationType: 'On-site', type: 'Full-time', category: 'Regulatory Affairs', description: 'Handle drug registration and regulatory submissions for domestic and international markets.', requirements: ['M.Pharm', '3+ years in regulatory', 'CTD/eCTD knowledge'], salaryMin: 55000, salaryMax: 90000, salaryCurrency: 'INR', postedBy: admin._id },
+  ]);
+
+  console.log('✅ Database seeded successfully!');
+  console.log('Admin: admin@pharmaone.com / admin123');
+  console.log('Doctor: doctor@pharmaone.com / doctor123');
+  console.log('Patient: patient@pharmaone.com / patient123');
+  process.exit(0);
+};
+
+seed().catch((err) => { console.error(err); process.exit(1); });

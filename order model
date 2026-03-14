@@ -1,0 +1,49 @@
+const mongoose = require('mongoose');
+
+const orderSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    items: [
+      {
+        medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine', required: true },
+        quantity: { type: Number, required: true, min: 1 },
+        price: { type: Number, required: true },
+        name: String,
+      },
+    ],
+    shippingAddress: {
+      name: { type: String, required: true },
+      phone: { type: String, required: true },
+      street: { type: String, required: true },
+      city: { type: String, required: true },
+      state: { type: String, required: true },
+      pincode: { type: String, required: true },
+    },
+    prescription: String, // Cloudinary URL if required
+    subtotal: { type: Number, required: true },
+    shippingFee: { type: Number, default: 40 },
+    discount: { type: Number, default: 0 },
+    total: { type: Number, required: true },
+    paymentMethod: { type: String, enum: ['COD', 'Online'], default: 'COD' },
+    paymentStatus: { type: String, enum: ['Pending', 'Paid', 'Failed', 'Refunded'], default: 'Pending' },
+    stripePaymentIntentId: String,
+    orderStatus: {
+      type: String,
+      enum: ['Placed', 'Confirmed', 'Packed', 'Shipped', 'OutForDelivery', 'Delivered', 'Cancelled'],
+      default: 'Placed',
+    },
+    trackingHistory: [
+      {
+        status: String,
+        message: String,
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+    estimatedDelivery: Date,
+    deliveredAt: Date,
+    cancelReason: String,
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Order', orderSchema);

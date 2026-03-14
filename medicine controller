@@ -1,0 +1,87 @@
+const asyncHandler = require('express-async-handler');
+const Medicine = require('../models/Medicine');
+
+// GET /api/medicines — list with search/filter/pagination
+const getMedicines = asyncHandler(async (req, res) => {
+  const { search, category, requiresPrescription, minPrice, maxPrice, sort, page = 1, limit = 20 } = req.query;
+
+  const query = { isActive: true };
+
+  if (search) query.$text = { $search: search };
+  if (category) query.category = category;
+  if (requiresPrescription !== undefined) query.requiresPrescription = requiresPrescription === 'true';
+  if (minPrice || maxPrice) {
+    query.finalPrice = {};
+    if (minPrice) query.finalPrice.$gte = Number(minPrice);
+    if (maxPrice) query.finalPrice.$lte = Number(maxPrice);
+  }
+
+  const sortOptions = {
+    newest: { createdAt: -1 },
+    price_asc: { finalPrice: 1 },
+    price_desc: { finalPrice: -1 },
+    popular: { rating: -1 },
+  };
+  const sortBy = sortOptions[sort] || { createdAt: -1 };
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [medicines, total] = await Promise.all([
+    Medicine.find(query).sort(sortBy).skip(skip).limit(Number(limit)),
+    Medicine.countDocuments(query),
+  ]);
+
+  res.json({
+    success: true,
+    count: medicines.length,
+    total,
+    pages: Math.ceil(total / Number(limit)),
+    page: Number(page),
+    medicines,
+  });
+});
+
+// GET /api/medicines/:id
+const getMedicineById = asyncHandler(async (req, res) => {
+  const medicine = await Medicine.findById(req.params.id).populate('reviews.user', 'name avatar');
+  if (!medicine) { res.status(404); throw new Error('Medicine not found'); }
+  res.json({ success: true, medicine });
+});
+
+// POST /api/medicines — admin only
+const createMedicine = asyncHandler(async (req, res) => {
+  const images = req.files ? req.files.map((f) => f.path) : [];
+  const medicine = await Medicine.create({ ...req.body, images });
+  res.status(201).json({ success: true, medicine });
+});
+
+// PUT /api/medicines/:id — admin/pharmacist
+const updateMedicine = asyncHandler(async (req, res) => {
+  const medicine = await Medicine.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!medicine) { res.status(404); throw new Error('Medicine not found'); }
+  res.json({ success: true, medicine });
+});
+
+// DELETE /api/medicines/:id — admin
+const deleteMedicine = asyncHandler(async (req, res) => {
+  const medicine = await Medicine.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+  if (!medicine) { res.status(404); throw new Error('Medicine not found'); }
+  res.json({ success: true, message: 'Medicine removed' });
+});
+
+// POST /api/medicines/:id/review
+const addReview = asyncHandler(async (req, res) => {
+  const { rating, comment } = req.body;
+  const medicine = await Medicine.findById(req.params.id);
+  if (!medicine) { res.status(404); throw new Error('Medicine not found'); }
+
+  const alreadyReviewed = medicine.reviews.find((r) => r.user.toString() === req.user._id.toString());
+  if (alreadyReviewed) { res.status(400); throw new Error('Already reviewed'); }
+
+  medicine.reviews.push({ user: req.user._id, rating, comment });
+  medicine.rating = medicine.reviews.reduce((acc, r) => acc + r.rating, 0) / medicine.reviews.length;
+  await medicine.save();
+
+  res.status(201).json({ success: true, message: 'Review added' });
+});
+
+module.exports = { getMedicines, getMedicineById, createMedicine, updateMedicine, deleteMedicine, addReview };

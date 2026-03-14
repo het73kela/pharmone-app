@@ -1,0 +1,188 @@
+const asyncHandler = require('express-async-handler');
+const OpenAI = require('openai');
+const pdfParse = require('pdf-parse');
+const axios = require('axios');
+const { Research } = require('../models/index');
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// ─── AI Navigator Chat ────────────────────────────────────────────────────────
+// POST /api/ai/chat
+const aiChat = asyncHandler(async (req, res) => {
+  const { message, conversationHistory = [] } = req.body;
+
+  const systemPrompt = `You are PharmaBot, the intelligent AI navigator for PharmaOne — an all-in-one pharmacy super app.
+
+PharmaOne has these features:
+1. 📚 eNotes & Video Lectures — Pharmacy study notes, PDFs, video lectures by subject and year
+2. 💊 Medicine Ordering — Browse, order, and get medicines delivered to your door
+3. 🔬 Research Analyzer — Upload research papers or search PubMed; AI analyzes and explains them
+4. 👨‍⚕️ Online Doctor Visits — Book video consultations with licensed doctors
+5. 💼 Jobs & Internships — Browse pharmacy careers, internships, residency programs
+
+Your job:
+- Understand what the user needs and guide them to the right feature
+- Answer pharmacy-related questions helpfully and accurately
+- For medical advice, always recommend consulting a doctor
+- Be warm, helpful, and concise
+- Respond with a JSON object: { "message": "your response", "action": "navigate|info|none", "route": "/medicines|/notes|/research|/doctors|/jobs|null", "quickReplies": ["option1", "option2"] }
+- Keep responses under 150 words`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...conversationHistory.slice(-8), // keep last 8 messages for context
+    { role: 'user', content: message },
+  ];
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages,
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
+    max_tokens: 300,
+  });
+
+  let response;
+  try {
+    response = JSON.parse(completion.choices[0].message.content);
+  } catch {
+    response = { message: completion.choices[0].message.content, action: 'none', route: null, quickReplies: [] };
+  }
+
+  res.json({ success: true, response });
+});
+
+// ─── Research Paper Analyzer ──────────────────────────────────────────────────
+// POST /api/research/analyze — upload PDF
+const analyzePaper = asyncHandler(async (req, res) => {
+  if (!req.file) { res.status(400); throw new Error('Please upload a PDF file'); }
+
+  // Parse PDF text
+  const pdfData = await pdfParse(req.file.buffer);
+  const text = pdfData.text.substring(0, 12000); // GPT context limit
+
+  const prompt = `You are a pharmacy and medical research expert. Analyze the following research paper and provide a structured analysis.
+
+Paper content:
+${text}
+
+Respond with a JSON object:
+{
+  "title": "paper title",
+  "authors": ["author1", "author2"],
+  "journal": "journal name",
+  "summary": "2-3 sentence plain English summary",
+  "keyFindings": ["finding 1", "finding 2", "finding 3"],
+  "methodology": "brief description of methods used",
+  "conclusion": "main conclusion",
+  "limitations": ["limitation 1", "limitation 2"],
+  "clinicalRelevance": "relevance to pharmacy/clinical practice",
+  "tags": ["tag1", "tag2", "tag3"]
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    response_format: { type: 'json_object' },
+    temperature: 0.3,
+    max_tokens: 1500,
+  });
+
+  const analysis = JSON.parse(completion.choices[0].message.content);
+
+  // Save to database
+  const paper = await Research.create({
+    user: req.user?._id,
+    title: analysis.title,
+    authors: analysis.authors,
+    aiSummary: analysis.summary,
+    aiKeyFindings: analysis.keyFindings,
+    aiMethodology: analysis.methodology,
+    aiConclusion: analysis.conclusion,
+    aiLimitations: analysis.limitations,
+    tags: analysis.tags,
+    source: 'Upload',
+  });
+
+  res.json({ success: true, paper: { ...paper.toObject(), clinicalRelevance: analysis.clinicalRelevance } });
+});
+
+// ─── Search Research Papers (PubMed) ─────────────────────────────────────────
+// GET /api/research/search?q=...&page=1
+const searchResearch = asyncHandler(async (req, res) => {
+  const { q, page = 1 } = req.query;
+  if (!q) { res.status(400); throw new Error('Search query required'); }
+
+  const retMax = 10;
+  const retStart = (Number(page) - 1) * retMax;
+
+  // Step 1: Search PubMed for IDs
+  const searchRes = await axios.get('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', {
+    params: { db: 'pubmed', term: q, retmax: retMax, retstart: retStart, retmode: 'json', sort: 'relevance' },
+  });
+
+  const ids = searchRes.data.esearchresult.idlist;
+  const total = parseInt(searchRes.data.esearchresult.count);
+
+  if (!ids.length) return res.json({ success: true, papers: [], total: 0 });
+
+  // Step 2: Fetch summaries
+  const summaryRes = await axios.get('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi', {
+    params: { db: 'pubmed', id: ids.join(','), retmode: 'json' },
+  });
+
+  const result = summaryRes.data.result;
+  const papers = ids.map((id) => {
+    const p = result[id];
+    return {
+      pubmedId: id,
+      title: p.title,
+      authors: p.authors?.map((a) => a.name) || [],
+      journal: p.fulljournalname,
+      publishedDate: p.pubdate,
+      doi: p.elocationid,
+      source: 'PubMed',
+      abstract: p.abstract || '',
+    };
+  });
+
+  res.json({ success: true, papers, total, pages: Math.ceil(total / retMax), page: Number(page) });
+});
+
+// ─── AI Summary for PubMed paper ─────────────────────────────────────────────
+// POST /api/research/summarize-pubmed
+const summarizePubmedPaper = asyncHandler(async (req, res) => {
+  const { pubmedId, title, abstract } = req.body;
+  if (!abstract) { res.status(400); throw new Error('Abstract required'); }
+
+  const prompt = `Analyze this pharmacy/medical research abstract:
+
+Title: ${title}
+Abstract: ${abstract}
+
+Respond in JSON:
+{
+  "summary": "1-2 sentence plain English summary",
+  "keyFindings": ["finding 1", "finding 2"],
+  "clinicalRelevance": "short note on clinical/pharmacy relevance",
+  "tags": ["tag1", "tag2"]
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    response_format: { type: 'json_object' },
+    max_tokens: 500,
+  });
+
+  const analysis = JSON.parse(completion.choices[0].message.content);
+  res.json({ success: true, analysis });
+});
+
+// ─── Get saved research papers ────────────────────────────────────────────────
+const getMyResearch = asyncHandler(async (req, res) => {
+  const papers = await Research.find({ user: req.user._id }).sort({ createdAt: -1 });
+  res.json({ success: true, papers });
+});
+
+module.exports = { aiChat, analyzePaper, searchResearch, summarizePubmedPaper, getMyResearch };

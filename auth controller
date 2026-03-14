@@ -1,0 +1,162 @@
+const asyncHandler = require('express-async-handler');
+const crypto = require('crypto');
+const User = require('../models/User');
+const { sendEmail } = require('../utils/email');
+
+// ─── Register ─────────────────────────────────────────────────────────────────
+const register = asyncHandler(async (req, res) => {
+  const { name, email, password, role } = req.body;
+
+  // Only allow patient/doctor/pharmacist self-registration
+  const allowedRoles = ['patient', 'doctor', 'pharmacist'];
+  const userRole = allowedRoles.includes(role) ? role : 'patient';
+
+  const user = await User.create({ name, email, password, role: userRole });
+
+  const token = user.generateToken();
+
+  res.status(201).json({
+    success: true,
+    message: 'Account created successfully',
+    token,
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+    },
+  });
+});
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+const login = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    res.status(400);
+    throw new Error('Please provide email and password');
+  }
+
+  const user = await User.findOne({ email }).select('+password');
+
+  if (!user || !(await user.matchPassword(password))) {
+    res.status(401);
+    throw new Error('Invalid email or password');
+  }
+
+  if (!user.isActive) {
+    res.status(401);
+    throw new Error('Your account has been deactivated');
+  }
+
+  const token = user.generateToken();
+
+  res.json({
+    success: true,
+    token,
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      isVerified: user.isVerified,
+    },
+  });
+});
+
+// ─── Get Current User ─────────────────────────────────────────────────────────
+const getMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).populate('savedNotes', 'title subject').populate('savedJobs', 'title company');
+  res.json({ success: true, user });
+});
+
+// ─── Update Profile ───────────────────────────────────────────────────────────
+const updateProfile = asyncHandler(async (req, res) => {
+  const updates = ['name', 'phone', 'address', 'specialization', 'qualification', 'experience', 'consultationFee'];
+  const updateObj = {};
+  updates.forEach((field) => {
+    if (req.body[field] !== undefined) updateObj[field] = req.body[field];
+  });
+
+  if (req.file) updateObj.avatar = req.file.path;
+
+  const user = await User.findByIdAndUpdate(req.user._id, updateObj, { new: true, runValidators: true });
+  res.json({ success: true, user });
+});
+
+// ─── Change Password ──────────────────────────────────────────────────────────
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const user = await User.findById(req.user._id).select('+password');
+
+  if (!(await user.matchPassword(currentPassword))) {
+    res.status(400);
+    throw new Error('Current password is incorrect');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.json({ success: true, message: 'Password updated successfully' });
+});
+
+// ─── Forgot Password ──────────────────────────────────────────────────────────
+const forgotPassword = asyncHandler(async (req, res) => {
+  const user = await User.findOne({ email: req.body.email });
+  if (!user) {
+    res.status(404);
+    throw new Error('No account with that email');
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  user.resetPasswordToken = crypto.createHash('sha256').update(token).digest('hex');
+  user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 min
+  await user.save({ validateBeforeSave: false });
+
+  const resetUrl = `${process.env.CLIENT_URL}/reset-password/${token}`;
+
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'PharmaOne — Password Reset',
+      html: `
+        <h2>Password Reset Request</h2>
+        <p>Click the link below to reset your password. This link expires in 10 minutes.</p>
+        <a href="${resetUrl}" style="background:#0ea5e9;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;">Reset Password</a>
+        <p>If you didn't request this, please ignore this email.</p>
+      `,
+    });
+    res.json({ success: true, message: 'Password reset email sent' });
+  } catch {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save({ validateBeforeSave: false });
+    res.status(500);
+    throw new Error('Email could not be sent');
+  }
+});
+
+// ─── Reset Password ───────────────────────────────────────────────────────────
+const resetPassword = asyncHandler(async (req, res) => {
+  const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    res.status(400);
+    throw new Error('Invalid or expired reset token');
+  }
+
+  user.password = req.body.password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+  await user.save();
+
+  res.json({ success: true, message: 'Password reset successful', token: user.generateToken() });
+});
+
+module.exports = { register, login, getMe, updateProfile, changePassword, forgotPassword, resetPassword };

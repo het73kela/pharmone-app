@@ -1,0 +1,1 @@
+welcome to pharmone app. this is the all in one pharmacy app where you can order medicine, get jobs and internships, online doctor meet, find good reseaech papers. can have eNotes of pharmacy eduction with lectures. All this things at one place

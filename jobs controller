@@ -1,0 +1,82 @@
+const asyncHandler = require('express-async-handler');
+const { Job } = require('../models/index');
+const User = require('../models/User');
+
+const getJobs = asyncHandler(async (req, res) => {
+  const { search, type, category, locationType, page = 1, limit = 15 } = req.query;
+  const query = { isActive: true };
+
+  if (search) query.$text = { $search: search };
+  if (type) query.type = type;
+  if (category) query.category = category;
+  if (locationType) query.locationType = locationType;
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [jobs, total] = await Promise.all([
+    Job.find(query).sort({ isFeatured: -1, createdAt: -1 }).skip(skip).limit(Number(limit)).select('-applications'),
+    Job.countDocuments(query),
+  ]);
+
+  res.json({ success: true, jobs, total, pages: Math.ceil(total / Number(limit)) });
+});
+
+const getJobById = asyncHandler(async (req, res) => {
+  const job = await Job.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true });
+  if (!job) { res.status(404); throw new Error('Job not found'); }
+  res.json({ success: true, job });
+});
+
+const createJob = asyncHandler(async (req, res) => {
+  const job = await Job.create({ ...req.body, postedBy: req.user._id });
+  res.status(201).json({ success: true, job });
+});
+
+const applyForJob = asyncHandler(async (req, res) => {
+  const { coverLetter } = req.body;
+  const job = await Job.findById(req.params.id);
+  if (!job) { res.status(404); throw new Error('Job not found'); }
+
+  const alreadyApplied = job.applications.find((a) => a.user.toString() === req.user._id.toString());
+  if (alreadyApplied) { res.status(400); throw new Error('Already applied for this job'); }
+
+  const resumeUrl = req.file?.path || req.body.resumeUrl;
+  if (!resumeUrl) { res.status(400); throw new Error('Please upload your resume'); }
+
+  job.applications.push({ user: req.user._id, resume: resumeUrl, coverLetter });
+  await job.save();
+
+  res.json({ success: true, message: 'Application submitted successfully' });
+});
+
+const getMyApplications = asyncHandler(async (req, res) => {
+  const jobs = await Job.find({ 'applications.user': req.user._id }).select('title company type locationType applications.$');
+  const applications = jobs.map((job) => ({ job: { _id: job._id, title: job.title, company: job.company, type: job.type }, ...job.applications[0].toObject() }));
+  res.json({ success: true, applications });
+});
+
+const updateApplicationStatus = asyncHandler(async (req, res) => {
+  const { applicationId, status } = req.body;
+  const job = await Job.findById(req.params.id);
+  if (!job) { res.status(404); throw new Error('Not found'); }
+
+  const app = job.applications.id(applicationId);
+  if (!app) { res.status(404); throw new Error('Application not found'); }
+  app.status = status;
+  await job.save();
+
+  res.json({ success: true, message: 'Application status updated' });
+});
+
+const saveJob = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  const jobId = req.params.id;
+  const isSaved = user.savedJobs.includes(jobId);
+
+  if (isSaved) user.savedJobs.pull(jobId);
+  else user.savedJobs.push(jobId);
+  await user.save();
+
+  res.json({ success: true, saved: !isSaved });
+});
+
+module.exports = { getJobs, getJobById, createJob, applyForJob, getMyApplications, updateApplicationStatus, saveJob };

@@ -1,0 +1,224 @@
+# 💊 PharmaOne — All-in-One Pharmacy Super App
+
+> The complete digital pharmacy ecosystem — notes, medicines, AI research, doctor visits, and careers. All in one place.
+
+![PharmaOne Banner](https://via.placeholder.com/1200x400/0f172a/22d3ee?text=PharmaOne+%E2%80%94+All-in-One+Pharmacy+App)
+
+---
+
+## 🚀 Features
+
+| Module | Description |
+|--------|-------------|
+| 📚 **eNotes & Video Lectures** | Pharmacy study material, PDFs, and curated video lectures |
+| 💊 **Medicine Ordering** | Browse, search, and order medicines with doorstep delivery |
+| 🔬 **AI Research Analyzer** | Upload or find research papers — AI summarizes and explains them |
+| 👨‍⚕️ **Online Doctor Visits** | Book and attend video consultations with licensed doctors |
+| 💼 **Internships & Jobs** | Pharmacy careers — internships, residencies, full-time roles |
+| 🤖 **AI Navigator** | Conversational AI that routes users to exactly what they need |
+
+---
+
+## 🧱 Tech Stack
+
+### Backend
+- **Node.js + Express** — REST API
+- **MongoDB + Mongoose** — Database
+- **JWT** — Authentication
+- **Socket.io** — Real-time doctor consultations
+- **Multer + Cloudinary** — File uploads
+- **OpenAI API** — AI features (research analyzer + navigator)
+- **Stripe** — Payments for medicines & doctor visits
+- **Nodemailer** — Email notifications
+
+### Frontend
+- **React 18 + Vite**
+- **React Router v6**
+- **Tailwind CSS**
+- **Axios** — API calls
+- **Socket.io-client** — Real-time video/chat
+- **React Query** — Server state management
+- **Zustand** — Client state
+- **Framer Motion** — Animations
+
+---
+
+## 📁 Project Structure
+
+```
+pharmaone/
+├── backend/
+│   ├── config/          # DB, Cloudinary, Stripe config
+│   ├── controllers/     # Business logic
+│   ├── middleware/      # Auth, error handling, rate limiting
+│   ├── models/          # Mongoose schemas
+│   ├── routes/          # Express routers
+│   ├── utils/           # Helpers (email, AI, etc.)
+│   ├── server.js        # Entry point
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   │   ├── components/  # Reusable UI components
+│   │   ├── pages/       # Route-level page components
+│   │   ├── hooks/       # Custom React hooks
+│   │   ├── context/     # React context providers
+│   │   ├── utils/       # API calls, helpers
+│   │   └── styles/      # Global CSS
+│   ├── index.html
+│   └── vite.config.js
+└── docker-compose.yml
+```
+
+---
+
+## ⚙️ Getting Started
+
+### Prerequisites
+- Node.js >= 18
+- MongoDB (local or Atlas)
+- OpenAI API Key
+- Stripe Account
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/YOUR_USERNAME/pharmaone.git
+cd pharmaone
+```
+
+### 2. Backend Setup
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Fill in your .env values
+npm run dev
+```
+
+### 3. Frontend Setup
+```bash
+cd frontend
+npm install
+cp .env.example .env
+# Fill in VITE_API_URL=http://localhost:5000
+npm run dev
+```
+
+### 4. Docker (Optional)
+```bash
+docker-compose up --build
+```
+
+---
+
+## 🌐 Environment Variables
+
+### Backend `.env`
+```
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/pharmaone
+JWT_SECRET=your_jwt_secret_here
+JWT_EXPIRE=7d
+OPENAI_API_KEY=sk-...
+STRIPE_SECRET_KEY=sk_test_...
+CLOUDINARY_CLOUD_NAME=your_cloud
+CLOUDINARY_API_KEY=your_key
+CLOUDINARY_API_SECRET=your_secret
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your@gmail.com
+EMAIL_PASS=your_app_password
+CLIENT_URL=http://localhost:5173
+```
+
+### Frontend `.env`
+```
+VITE_API_URL=http://localhost:5000/api
+VITE_STRIPE_PUBLIC_KEY=pk_test_...
+VITE_SOCKET_URL=http://localhost:5000
+```
+
+---
+
+## 👥 User Roles
+
+- **Patient** — Default user. Can order medicines, book doctors, browse notes, apply for jobs
+- **Doctor** — Can set availability, conduct consultations, write prescriptions
+- **Pharmacist** — Can manage medicine inventory
+- **Admin** — Full platform control
+
+---
+
+## 📡 API Endpoints
+
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | Login |
+| POST | `/api/auth/refresh` | Refresh JWT |
+| POST | `/api/auth/forgot-password` | Request password reset |
+
+### Medicines
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/medicines` | List all medicines |
+| GET | `/api/medicines/:id` | Single medicine |
+| POST | `/api/medicines` | Add medicine (Admin) |
+| POST | `/api/orders` | Place order |
+| GET | `/api/orders/my` | User's orders |
+
+### Notes & Lectures
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/notes` | Browse eNotes |
+| POST | `/api/notes` | Upload note (Admin) |
+| GET | `/api/lectures` | Video lectures |
+
+### Research
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/research/analyze` | AI analyze a paper (PDF upload) |
+| GET | `/api/research/search` | Search PubMed/Semantic Scholar |
+
+### Doctors
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/doctors` | List doctors |
+| POST | `/api/appointments` | Book appointment |
+| GET | `/api/appointments/my` | My appointments |
+
+### Jobs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/jobs` | Browse jobs |
+| POST | `/api/jobs` | Post job (Admin) |
+| POST | `/api/jobs/:id/apply` | Apply for job |
+
+### AI Navigator
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/ai/chat` | Chat with AI navigator |
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit your changes: `git commit -m 'feat: add something'`
+4. Push: `git push origin feat/your-feature`
+5. Open a Pull Request
+
+---
+
+## 📜 License
+
+MIT License — see [LICENSE](LICENSE)
+
+---
+
+## 🙏 Acknowledgements
+
+- [OpenAI](https://openai.com) for AI capabilities
+- [PubMed API](https://pubmed.ncbi.nlm.nih.gov/developers/) for research paper search
+- [Stripe](https://stripe.com) for payment processing
